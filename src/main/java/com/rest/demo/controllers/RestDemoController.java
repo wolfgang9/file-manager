@@ -4,12 +4,14 @@ import com.rest.demo.repository.Xfile;
 import com.rest.demo.repository.XfileRepository;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.Resource;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.*;
 import java.util.ArrayList;
@@ -33,41 +35,41 @@ public class RestDemoController {
                 x.setId(file.getOriginalFilename()+"_"+file.getSize());
                 xFileRepo.save(x);
             }
-            return ResponseEntity.ok().body("All files saved successfully");
+            return ResponseEntity.status(HttpStatusCode.valueOf(201)).body("All files saved successfully");
         }  catch(Exception e) {
             return ResponseEntity.internalServerError().body("File not uploaded: "+e.getMessage());
         }
     }
 
     @GetMapping("/downloader")
-    public void downloader(@RequestParam("fileGroup") String fileGroup, HttpServletResponse response) throws IOException {
-         List<Xfile> dwnldList = new ArrayList<>();
-         dwnldList = xFileRepo.findByfileGroup(fileGroup);
-        ZipOutputStream zipOutputStream = new ZipOutputStream(response.getOutputStream());
-        InputStream inputStream = null;
-        for(Xfile xfile: dwnldList) {
-            ZipEntry zipEntry = new ZipEntry(xfile.getFileName());
-            File f=new File("D:/",xfile.getFileName());
-            FileOutputStream fos = new FileOutputStream(f);
-            fos.write(xfile.getFiles());
-            inputStream = new FileInputStream(f);
-            zipOutputStream.putNextEntry(zipEntry);
-            zipOutputStream.write(xfile.getFiles());
-            fos.close();
-        }
-        zipOutputStream.closeEntry();
-        zipOutputStream.close();
-        assert inputStream != null;
-        inputStream.close();
-        response.setContentType("application/zip");
-        response.setStatus(201);
-        String zipFileName = "attachment; filename="+fileGroup+".zip";
-        response.setHeader("Content-Disposition", "attachment; filename=example.zip");
-//        response.setHeader("Content-Disposition", zipFileName);
-//        response.addHeader("Pragma", "no-cache");
-//        response.addHeader("Expires", "0");
-
-//        return ResponseEntity.ok(response);
+    public ResponseEntity downloader(HttpServletResponse response, @RequestParam("fileGroup") String fileGroup) throws IOException {
+         List<Xfile> dwnldList = xFileRepo.findByfileGroup(fileGroup);
+         if(dwnldList.size() > 1) {
+             String zipFileName = "attachment;filename=" + fileGroup + ".zip";
+             response.setContentType("application/octet-stream");
+             response.setHeader("Content-Disposition", zipFileName);
+             response.setStatus(200);
+             ZipOutputStream zipOutputStream = new ZipOutputStream(response.getOutputStream());
+             for (Xfile xfile : dwnldList) {
+                 ZipEntry zipEntry = new ZipEntry(xfile.getFileName());
+//            File f=new File("D:/",xfile.getFileName());
+//            FileOutputStream fos = new FileOutputStream(f);
+//            fos.write(xfile.getFiles());
+                 zipEntry.setSize(xfile.getFiles().length);
+                 zipOutputStream.putNextEntry(zipEntry);
+                 zipOutputStream.write(xfile.getFiles());
+//            fos.close();
+             }
+             zipOutputStream.closeEntry();
+             zipOutputStream.close();
+             return ResponseEntity.ok().body("Files downloaded successfully");
+         } else {
+             HttpHeaders headers = new HttpHeaders();
+             headers.add(HttpHeaders.CONTENT_DISPOSITION,"attachment;filename=" + dwnldList.getFirst().getFileName());
+             ByteArrayResource resource = new ByteArrayResource(dwnldList.getFirst().getFiles());
+             return ResponseEntity.ok().headers(headers).contentLength(dwnldList.getFirst().getFiles().length).contentType(MediaType.APPLICATION_OCTET_STREAM)
+                     .body(resource);
+         }
     }
 
 }
